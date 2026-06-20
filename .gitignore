@@ -1,2 +1,1 @@
-node_modules 
-dist 
+Nothing should be ignored in this case, as only a Python source file (`logic_test.py`) was added and there are no build artifacts, dependencies, or temporary files in the changes.
