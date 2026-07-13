@@ -11,7 +11,7 @@ import { msToHours, formatDuration, getColorLabel, getBadgeStyle } from './utils
 import { analyzeHaidPeriods } from './utils/haid/engine';
 import { analyzeNifasPeriods } from './utils/engineNifas';
 
-// HELPER BARU: Mengamankan zona waktu lokal (WIB/WITA/WIT) agar tidak terpotong UTC
+// HELPER: Mengamankan zona waktu lokal
 const toLocalISOString = (date) => {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -76,7 +76,12 @@ const App = () => {
     }
 
     let currentTime = new Date();
-    // PERBAIKAN: Kunci waktu Wiladah dengan helper lokal agar durasi genap 15 Hari!
+    
+    // PERBAIKAN: Jika ada tanggal spesifik (misal: 20 april), set currentTime dari situ!
+    if (periods.length > 0 && periods[0].parsedStartDate) {
+      currentTime = new Date(periods[0].parsedStartDate);
+    }
+
     if (appMode === 'NIFAS') {
       if (!inputWiladah) {
         const localISO = toLocalISOString(currentTime);
@@ -89,7 +94,11 @@ const App = () => {
 
     const newLogs = [];
     periods.forEach((p) => {
-      // Pembulatan millisecond agar akurasi menit tidak meleset
+      // Jika rentang tanggal, sinkronkan ulang jamnya ke tanggal persis yang dibaca Parser
+      if (p.parsedStartDate) {
+        currentTime = new Date(p.parsedStartDate);
+      }
+
       const durationMs = Math.round(p.hours * 60) * 60 * 1000;
       const startTime = new Date(currentTime.getTime());
       const endTime = new Date(currentTime.getTime() + durationMs);
@@ -292,7 +301,6 @@ const App = () => {
                       {appMode === 'NIFAS' && userStatus === 'mutadah' && (
                         <div> <label className="block text-[10px] md:text-xs font-bold text-slate-500 uppercase mb-1.5">Adat Nifas</label> <input type="number" value={Number.isNaN(adatNifas) ? '' : adatNifas} onChange={(e) => setAdatNifas(parseInt(e.target.value))} className="w-full rounded border border-slate-200 p-3 text-center text-sm md:text-base font-bold bg-slate-50 outline-none focus:border-slate-400"/> </div>
                       )}
-                      
                       <div> <label className="block text-[10px] md:text-xs font-bold text-slate-500 uppercase mb-1.5">Adat Haid</label> <input type="number" value={Number.isNaN(adatHaid) ? '' : adatHaid} onChange={(e) => setAdatHaid(parseInt(e.target.value))} className="w-full rounded border border-slate-200 p-3 text-center text-sm md:text-base font-bold bg-slate-50 outline-none focus:border-slate-400"/> </div>
                       <div> <label className="block text-[10px] md:text-xs font-bold text-slate-500 uppercase mb-1.5">Adat Suci</label> <input type="number" value={Number.isNaN(adatSuci) ? '' : adatSuci} onChange={(e) => setAdatSuci(parseInt(e.target.value))} className="w-full rounded border border-slate-200 p-3 text-center text-sm md:text-base font-bold bg-slate-50 outline-none focus:border-slate-400"/> </div>
                     </div>

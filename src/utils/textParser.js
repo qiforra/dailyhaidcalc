@@ -1,11 +1,13 @@
 // src/utils/textParser.js
 export const parseHaidText = (inputText) => {
-  // 1. Ekstrak Adat Haid (AH) dan Adat Suci (AS) / (AN)
+  // 1. Ekstrak Adat (Ditambahkan AN / Adat Nifas)
   const ahMatch = inputText.match(/AH\s*[:=]?\s*(\d+)\s*(hari|jam)?/i);
   const asMatch = inputText.match(/AS\s*[:=]?\s*(\d+)\s*(hari|jam)?/i);
+  const anMatch = inputText.match(/AN\s*[:=]?\s*(\d+)\s*(hari|jam)?/i);
 
   const adatHaid = ahMatch ? parseInt(ahMatch[1], 10) : NaN;
   const adatSuci = asMatch ? parseInt(asMatch[1], 10) : NaN;
+  const adatNifas = anMatch ? parseInt(anMatch[1], 10) : NaN;
 
   const userStatus = (!Number.isNaN(adatHaid) && !Number.isNaN(adatSuci)) 
     ? 'mutadah' 
@@ -25,18 +27,19 @@ export const parseHaidText = (inputText) => {
 
   const periods = [];
   let match;
-  let hasDateMatch = false;
+  let hasValidDateMatch = false; // Diganti nama agar lebih jelas
 
-  // 3. COBA PARSE FORMAT RENTANG TANGGAL
-  const dateRegex = /(KD|B)\s*(?:tgl)?\s*(\d{1,2})\s+([a-zA-Z]+)\s*[-–]\s*(\d{1,2})\s+([a-zA-Z]+)\s*(?:\(\s*([a-zA-Z]+)\s*\)|\b(hitam|merah|coklat|kuning|keruh|asyqor)\b)?/gi;
+  // 3. PARSER RENTANG TANGGAL (DIPERTAJAM: HANYA TERIMA NAMA BULAN ASLI)
+  // Regex ini sekarang TIDAK AKAN tertipu oleh kata "kd" atau "b" sebagai bulan.
+  const monthNames = "januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|may|jun|jul|agu|ags|sep|sept|okt|nov|des";
+  const dateRegex = new RegExp(`(KD|B)\\s*(?:tgl)?\\s*(\\d{1,2})\\s+(${monthNames})(?:\\s*[-–]\\s*(\\d{1,2})\\s+(${monthNames}))?\\s*(?:\\(\\s*([a-zA-Z]+)\\s*\\)|\\b(hitam|merah|coklat|kuning|keruh|asyqor)\\b)?`, 'gi');
   
   while ((match = dateRegex.exec(inputText)) !== null) {
-    hasDateMatch = true;
     const type = match[1].toUpperCase();
     const startDay = parseInt(match[2], 10);
     const startMonthStr = match[3].toLowerCase();
-    const endDay = parseInt(match[4], 10);
-    const endMonthStr = match[5].toLowerCase();
+    const endDay = match[4] ? parseInt(match[4], 10) : null;
+    const endMonthStr = match[5] ? match[5].toLowerCase() : null;
     const colorString = match[6] || match[7]; 
 
     const MONTH_MAP = {
@@ -48,20 +51,28 @@ export const parseHaidText = (inputText) => {
     };
 
     const startMonth = MONTH_MAP[startMonthStr];
-    const endMonth = MONTH_MAP[endMonthStr];
 
-    if (startMonth !== undefined && endMonth !== undefined) {
+    if (startMonth !== undefined) {
+      hasValidDateMatch = true; // HANYA DISET TRUE JIKA BULAN VALID
       const currentYear = new Date().getFullYear();
       let startDate = new Date(currentYear, startMonth, startDay);
-      let endDate = new Date(currentYear, endMonth, endDay);
+      startDate.setHours(0, 0, 0, 0);
+      let endDate;
 
-      if (endDate < startDate) endDate.setFullYear(currentYear + 1);
+      if (endDay !== null && endMonthStr !== null && MONTH_MAP[endMonthStr] !== undefined) {
+        endDate = new Date(currentYear, MONTH_MAP[endMonthStr], endDay);
+        endDate.setHours(0, 0, 0, 0);
+        if (endDate < startDate) endDate.setFullYear(currentYear + 1);
+      } else {
+        endDate = new Date(); 
+        if (endDate < startDate) startDate.setFullYear(currentYear - 1); 
+      }
 
       const diffMs = endDate - startDate;
       const hours = diffMs / (1000 * 60 * 60);
 
       if (hours > 0) {
-        const periodObj = { type, hours };
+        const periodObj = { type, hours, parsedStartDate: startDate.toISOString() };
         const colorNumber = mapColorToNumber(colorString);
         if (colorNumber !== null) periodObj.color = colorNumber;
         periods.push(periodObj);
@@ -70,39 +81,36 @@ export const parseHaidText = (inputText) => {
   }
 
   // 4. PARSER CERDAS UNTUK FORMAT DURASI (Jam, Menit, Hari, & "Kurang")
-  if (!hasDateMatch) {
-    // Regex ini menangkap "KD/B" lalu memakan seluruh kata setelahnya HINGGA bertemu KD/B yang baru.
+  // Sekarang akan berjalan dengan sempurna jika hasValidDateMatch masih false
+  if (!hasValidDateMatch) {
     const blockRegex = /\b(KD|B)\b\s*[:=]?\s*([\s\S]*?)(?=\b(?:KD|B|AH|AS|AN)\b|$)/gi;
     
     while ((match = blockRegex.exec(inputText)) !== null) {
       const type = match[1].toUpperCase();
       const rawContent = match[2];
       
-      // Ambil warna darah
       let colorNumber = null;
       const colorMatch = rawContent.match(/\b(hitam|merah|coklat|kuning|keruh|asyqor)\b/i);
       if (colorMatch) colorNumber = mapColorToNumber(colorMatch[1]);
       
-      // Bersihkan teks dari kata pengganggu dan warna
       let timeText = rawContent
         .replace(/\b(hitam|merah|coklat|kuning|keruh|asyqor)\b/gi, '')
         .replace(/sedikit|mungkin|sekitar|kurang\s+lebih|\(|\)/gi, ' ')
         .trim();
           
-      // Fungsi pelacak angka di dalam teks
       const parseTimePart = (str) => {
         let h = 0;
         let foundUnit = false;
         
         const dMatch = str.match(/(\d+)\s*(hari|hr)/i);
         const hMatch = str.match(/(\d+)\s*(jam)/i);
-        const mMatch = str.match(/(\d+)\s*(menit|mnt|menit)/i);
+        const mMatch = str.match(/(\d+)\s*(menit|mnt)/i);
         
         if (dMatch) { h += parseInt(dMatch[1], 10) * 24; foundUnit = true; }
         if (hMatch) { h += parseInt(hMatch[1], 10); foundUnit = true; }
-        if (mMatch) { h += parseInt(mMatch[1], 10) / 60; foundUnit = true; } // menit konversi ke jam desimal
+        if (mMatch) { h += parseInt(mMatch[1], 10) / 60; foundUnit = true; }
         
-        // Fallback: Jika dia ketik angka doang tanpa satuan (Cth: KD: 7), asumsikan "Hari"
+        // Fallback: Jika angka doang tanpa satuan (Cth: "b 10"), asumsikan "Hari"
         if (!foundUnit) {
           const numMatch = str.match(/(\d+)/);
           if (numMatch) h += parseInt(numMatch[1], 10) * 24;
@@ -112,7 +120,6 @@ export const parseHaidText = (inputText) => {
       };
 
       let hours = 0;
-      // Jika ada kata "kurang", belah teks jadi dua lalu kurangkan nilainya
       if (timeText.toLowerCase().includes('kurang')) {
         const parts = timeText.toLowerCase().split('kurang');
         hours = parseTimePart(parts[0]) - parseTimePart(parts[1]);
@@ -129,7 +136,7 @@ export const parseHaidText = (inputText) => {
   }
 
   return {
-    userConfig: { userStatus, lupaAdat: false, adatHaid, adatSuci },
+    userConfig: { userStatus, lupaAdat: false, adatHaid, adatSuci, adatNifas },
     periods
   };
 };
