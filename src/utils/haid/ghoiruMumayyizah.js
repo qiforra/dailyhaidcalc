@@ -18,7 +18,7 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
   let lastHaidDuration = 0;
   let isTaqothuActive = false;
   
-  // 🚩 FLAG BARU: Untuk menandai bahwa kita sedang dalam jeda bersih kasus "Haid Mundur"
+  // 🚩 FLAG KHUSUS: Menandai bahwa kita sedang dalam jeda bersih kasus "Haid Mundur"
   let isMundurGap = false; 
 
   spanPeriods.forEach((p, idx) => {
@@ -73,11 +73,11 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
           cycleAdatSuci = suciAcc;
         }
 
-        // 🚩 LOGIKA BARU: Jika jeda B pada kasus Mundur selesai, paksa masuk ke state HAID untuk KD berikutnya
+        // 🚩 LOGIKA TRANSISI MUNDUR: Jika jeda B pada kasus Mundur selesai, 
+        // paksa masuk ke state HAID untuk KD berikutnya.
         if (p.type === 'B' && isMundurGap && pLeft <= 0.01) {
           loopState = 'HAID';
           haidAcc = 0;
-          suciAcc = 0; // Reset agar tidak mengganggu target suci berikutnya
           isMundurGap = false;
         }
       }
@@ -113,27 +113,36 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
 
           const currentTarget = targetHaid;
 
-          // 🚩 LOGIKA BARU: DAM MUTHATORRIF (LOOKAHEAD)
+          // 🚩 LOGIKA DAM MUTHATORRIF (LOOKAHEAD)
           // Jika darah pertama < 24 jam, cek apakah bisa nyaplok atau harus mundur
           if (p.hours < MIN_HAID_JAM) {
             const { hasKDAfter, timeToNextKD } = scanUntilNextKD(spanPeriods, idx);
             if (hasKDAfter) {
-              // Cari durasi KD berikutnya
               let nextKdIdx = idx + 1;
               while(nextKdIdx < spanPeriods.length && spanPeriods[nextKdIdx].type !== 'KD') nextKdIdx++;
               const nextKdHours = spanPeriods[nextKdIdx].hours;
               
-              const totalPotential = p.hours + timeToNextKD + nextKdHours;
-              const isValidCombined = totalPotential >= currentTarget; // Bisa nyaplok memenuhi adat
-              const isValidNextKD = nextKdHours >= MIN_HAID_JAM && nextKdHours <= MAX_HAID_JAM; // KD2 sah jadi haid
+              // KUNCI UTAMA: KD1 bisa nyaplok HANYA JIKA (KD1 + B) < targetHaid.
+              // Jika (KD1 + B) >= targetHaid, berarti jeda bersih sudah melebihi adat.
+              const kd1PlusB = p.hours + timeToNextKD;
+              const canNyaplok = kd1PlusB < currentTarget; 
+              const isValidNextKD = nextKdHours >= MIN_HAID_JAM && nextKdHours <= MAX_HAID_JAM;
 
-              // KASUS MUNDUR: Gabungan tidak memenuhi target, TAPI KD2 sendiri sah jadi haid
-              if (!isValidCombined && isValidNextKD) {
+              // KASUS MUNDUR: KD1 tidak bisa nyaplok, TAPI KD2 sah jadi haid.
+              if (!canNyaplok && isValidNextKD) {
                 isMundurGap = true;
                 loopState = 'SUCI';
                 suciAcc = 0;
                 haidAcc = 0;
                 continue; // KD1 akan diproses ulang di state SUCI -> otomatis jadi Istihadhoh
+              }
+              
+              // Jika tidak bisa nyaplok DAN KD2 juga tidak valid, KD1 otomatis jadi Isti
+              if (!canNyaplok && !isValidNextKD) {
+                loopState = 'SUCI';
+                suciAcc = 0;
+                haidAcc = 0;
+                continue;
               }
             } else {
               // Tidak ada KD berikutnya. KD < 24 jam sendirian haram jadi Haid.
@@ -166,18 +175,19 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
         
         // --- LOGIKA JEDA B (QOUL SAHBI / NYAPLOK) ---
         else if (p.type === 'B') {
-          const { hasKDAfter, timeToNextKD } = scanUntilNextKD(spanPeriods, idx);
+          const { hasKDAfter } = scanUntilNextKD(spanPeriods, idx);
           
           // 🚩 PERBAIKAN LOGIKA NYAPLOK: 
           // Selama masih ada KD setelahnya DAN kita belum mencapai target haid, 
           // maka B WAJIB dikonsumsi sebagai Haid (Sahbi) untuk menyambung darah.
-          const needMoreHaid = (haidAcc + pLeft) < currentTarget;
-          
-          if (hasKDAfter && needMoreHaid) {
-            if (consume > 0) {
-              pushDetail(detailsArr, consume, 'Haid (Qoul Sahbi)');
-              haidAcc += consume;
-              pLeft -= consume;
+          if (hasKDAfter && haidAcc < currentTarget) {
+            const needed = currentTarget - haidAcc;
+            const bConsume = Math.min(pLeft, needed);
+            
+            if (bConsume > 0) {
+              pushDetail(detailsArr, bConsume, 'Haid (Qoul Sahbi)');
+              haidAcc += bConsume;
+              pLeft -= bConsume;
             }
             if (haidAcc >= currentTarget) {
               lastHaidDuration = haidAcc;
@@ -187,12 +197,13 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
               targetSuci = getTaqothuSuciTarget(cycleAdatSuci);
             }
           } else {
+            // Tidak bisa nyaplok (tidak ada KD setelahnya) atau target sudah tercapai.
             lastHaidDuration = haidAcc;
             loopState = 'SUCI';
             suciAcc = 0;
             if (!isNormalQoul1) cycleAdatHaid = haidAcc;
             targetSuci = getTaqothuSuciTarget(cycleAdatSuci);
-            continue;
+            // Sisa pLeft akan otomatis diproses di iterasi while berikutnya sebagai SUCI
           }
         }
       }
