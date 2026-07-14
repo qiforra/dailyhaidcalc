@@ -14,8 +14,8 @@ export const evaluateTamyiz = (spanPeriods) => {
 
   const allKdColors = spanPeriods.filter((p) => p.type === 'KD').map((p) => p.color || DEFAULT_WEAK_COLOR);
   const absoluteStrongestColor = Math.min(...allKdColors);
-
   const tamyizSpans = [];
+
   let currentHaidAcc = 0;
   let currentWeakAcc = 0;
   let isSearchingHaid = true;
@@ -40,13 +40,17 @@ export const evaluateTamyiz = (spanPeriods) => {
           if (pColor === lastColor) {
             currentHaidAcc += p.hours;
             tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
-          } else if (pColor > lastColor) {
-            if (!hasAcceptedWeak && (currentHaidAcc + p.hours <= MAX_HAID_JAM)) {
+          } 
+          // 🚩 PERBAIKAN DI SINI: Ubah <= menjadi <
+          // Darah lemah TIDAK BOLEH ditarik jadi Haid jika akan menggenapi 15 hari.
+          // Biarkan ia jadi Isti agar bisa membentuk "pemisah darah lemah 15 hari".
+          else if (pColor > lastColor) {
+            if (!hasAcceptedWeak && (currentHaidAcc + p.hours < MAX_HAID_JAM)) {
               currentHaidAcc += p.hours;
               hasAcceptedWeak = true;
               lastColor = pColor;
               tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
-              isSearchingHaid = false; 
+              isSearchingHaid = false;
             } else {
               isSearchingHaid = false;
               currentWeakAcc = p.hours;
@@ -60,11 +64,14 @@ export const evaluateTamyiz = (spanPeriods) => {
         let nextKDColor = DEFAULT_WEAK_COLOR;
         let lookAheadIdx = idx + 1;
         while (lookAheadIdx < spanPeriods.length && spanPeriods[lookAheadIdx].type === 'B') lookAheadIdx++;
+        
         if (lookAheadIdx < spanPeriods.length && spanPeriods[lookAheadIdx].type === 'KD') {
           nextKDHours = spanPeriods[lookAheadIdx].hours;
           nextKDColor = spanPeriods[lookAheadIdx].color || DEFAULT_WEAK_COLOR;
         }
+
         const isSandwiched = (currentHaidAcc > 0) && (nextKDHours > 0) && (nextKDColor <= lastColor) && (currentHaidAcc + p.hours + nextKDHours <= MAX_HAID_JAM);
+        
         if (isSandwiched && !hasAcceptedWeak) {
           currentHaidAcc += p.hours;
           tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours });
@@ -80,11 +87,15 @@ export const evaluateTamyiz = (spanPeriods) => {
         }
       }
     } else {
+      // STATE: SUDAH MENEMUKAN DARAH LEMAH (MENCARI PEMISAH 15 HARI)
       if (p.type === 'B') {
         currentWeakAcc += p.hours;
         tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours });
       } else if (p.type === 'KD') {
         const pColor = p.color || DEFAULT_WEAK_COLOR;
+        
+        // 🚩 KUNCI UTAMA: Jika akumulasi darah lemah sudah >= 15 hari (pemisah hukum terpenuhi)
+        // DAN darah baru lebih kuat/sama, maka ini adalah HAID BARU!
         if (currentWeakAcc >= MIN_SUCI_JAM) {
           if (pColor <= lastWeakColor) {
             isSearchingHaid = true;
@@ -108,6 +119,7 @@ export const evaluateTamyiz = (spanPeriods) => {
     }
   });
 
+  // Grouping hasil
   const groupedTamyiz = [];
   tamyizSpans.forEach((ts) => {
     const last = groupedTamyiz[groupedTamyiz.length - 1];
