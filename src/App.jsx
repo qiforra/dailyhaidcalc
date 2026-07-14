@@ -9,7 +9,9 @@ import {
 import { parseHaidText } from './utils/textParser';
 import { msToHours, formatDuration, getColorLabel, getBadgeStyle } from './utils/formatters';
 import { analyzeHaidPeriods } from './utils/haid/engine';
-import { analyzeNifasPeriods } from './utils/engineNifas';
+
+// PERUBAHAN DI SINI: Mengubah import path ke folder nifas yang baru terpecah
+import { analyzeNifasPeriods } from './utils/nifas';
 
 // HELPER: Mengamankan zona waktu lokal
 const toLocalISOString = (date) => {
