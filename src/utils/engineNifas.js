@@ -10,10 +10,10 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
   const baseHaid = (!Number.isNaN(adatHaid) && adatHaid > 0) ? adatHaid * 24 : 24; 
   const baseSuci = (!Number.isNaN(adatSuci) && adatSuci > 0) ? adatSuci * 24 : (29 * 24); 
   
-  // Nifas 'Adadan: Maksimal 60 hari dari kelahiran, atau mengikuti Adat Nifas jika lebih pendek
+  // Nifas 'Adadan: Maksimal 60 hari dari kelahiran
   const targetNifas = effectiveStatus === 'mutadah' 
     ? Math.min((Number.isNaN(adatNifas) ? 40 : adatNifas) * 24, 60 * 24)
-    : 0.01;
+    : 0.01; // Mubtadi'ah = setetes
 
   let meta = { isTamyizValid: false, fallbackReason: "", effectiveStatus, caseStatus: "" };
   
@@ -25,12 +25,12 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
   // STATE MACHINE 3 FASE
   // ==========================================
   // FASE 1: NIFAS             → Mengisi kuota 'Adadan (max 60 hari)
-  // FASE 2: POST_NIFAS_SUCI   → Khusus Mu'tadah. Semua waktu dihukumi Suci/Istihadhah sampai AS terpenuhi
+  // FASE 2: POST_NIFAS_SUCI   → WAJIB untuk semua! Melunasi Adat Suci sbg Istihadhah
   // FASE 3: CYCLE             → Siklus Haid (AH) ↔ Suci (AS) bergantian
   // ==========================================
   
   let phase = 'NIFAS'; 
-  let cycleState = 'HAID'; // 'HAID' | 'SUCI' (aktif saat fase CYCLE)
+  let cycleState = 'HAID';
   
   let nifasAcc = 0;
   let postNifasSuciAcc = 0;
@@ -43,15 +43,15 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
       let detailsArr = [];
 
       // ==========================================
-      // FASE 1: NIFAS (Mengisi Kuota 'Adadan)
+      // FASE 1: NIFAS
       // ==========================================
       if (phase === 'NIFAS') {
-          // Kasus Jeda Wiladah >= 15 Hari di awal → Nifas Gugur Mutlak
+          // Jeda Wiladah >= 15 Hari → Nifas Gugur
           if (nifasAcc === 0 && p.type === 'B' && p.hours >= 15 * 24) {
               pushDetail(detailsArr, p.hours, 'Suci (Jeda Wiladah ≥15 Hari, Nifas Gugur)');
               globalTimeAcc += p.hours;
-              phase = 'CYCLE';
-              cycleState = 'HAID';
+              phase = 'POST_NIFAS_SUCI'; // Langsung ke pelunasan AS
+              postNifasSuciAcc = 0;
               pLeft = 0;
           } else {
               let remainingNifas = targetNifas - nifasAcc;
@@ -61,7 +61,6 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
                   if (p.type === 'KD') {
                       pushDetail(detailsArr, consume, 'Nifas');
                   } else {
-                      // Jeda B di awal/tengah tetap memotong kuota 'adadan
                       pushDetail(detailsArr, consume, 'Suci (Jeda Wiladah / Nifas \'Adadan)');
                   }
                   nifasAcc += consume;
@@ -69,36 +68,33 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
                   globalTimeAcc += consume;
               }
 
-              // Jika kuota nifas habis → Masuk fase pelunasan Suci (KHUSUS MU'TADAH)
-              if (nifasAcc >= targetNifas - 0.01) {
-                  if (effectiveStatus === 'mutadah') {
-                      phase = 'POST_NIFAS_SUCI';
-                      postNifasSuciAcc = 0;
-                  } else {
-                      phase = 'CYCLE';
-                      cycleState = 'HAID';
-                      cycleHaidAcc = 0;
-                  }
+              // Jika kuota nifas habis → WAJIB masuk fase POST_NIFAS_SUCI
+              if (nifasAcc >= targetNifas - 0.01 && pLeft > 0.01) {
+                  phase = 'POST_NIFAS_SUCI';
+                  postNifasSuciAcc = 0;
+              } else if (nifasAcc >= targetNifas - 0.01 && pLeft <= 0.01) {
+                  phase = 'POST_NIFAS_SUCI';
+                  postNifasSuciAcc = 0;
               }
           }
       }
 
       // ==========================================
-      // FASE 2: POST_NIFAS_SUCI (Khusus Mu'tadah)
+      // FASE 2: POST_NIFAS_SUCI (WAJIB UNTUK SEMUA)
       // ==========================================
       if (phase === 'POST_NIFAS_SUCI' && pLeft > 0.01) {
           let remainingSuci = baseSuci - postNifasSuciAcc;
           let consume = Math.min(pLeft, remainingSuci);
 
-          // Baik B maupun KD di fase ini dihukumi Suci/Istihadhah sampai AS terpenuhi
           if (consume > 0) {
-              pushDetail(detailsArr, consume, 'Suci (Melengkapi Adat Suci)');
+              // Semua waktu di fase ini adalah Istihadhah/Suci untuk melunasi AS
+              pushDetail(detailsArr, consume, 'Istihadhah (Melengkapi Adat Suci)');
               postNifasSuciAcc += consume;
               pLeft -= consume;
               globalTimeAcc += consume;
           }
 
-          // Jika AS sudah lunas → Masuk ke Siklus Normal
+          // Jika AS sudah lunas → Baru masuk Siklus Haid
           if (postNifasSuciAcc >= baseSuci - 0.01) {
               phase = 'CYCLE';
               cycleState = 'HAID';
@@ -108,9 +104,8 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
       }
 
       // ==========================================
-      // FASE 3: CYCLE (Siklus Haid & Suci Bergantian)
+      // FASE 3: CYCLE
       // ==========================================
-      // PERBAIKAN: Gunakan while loop agar satu block KD bisa terpecah ke beberapa fase
       while (phase === 'CYCLE' && pLeft > 0.01) {
           if (cycleState === 'HAID') {
               let needed = baseHaid - cycleHaidAcc;
@@ -119,7 +114,6 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
                   if (p.type === 'KD') {
                       pushDetail(detailsArr, consume, 'Haid');
                   } else {
-                      // Jeda B di tengah siklus haid → tetap dihukumi Haid (Tamyiz/Qoul Sahbi)
                       pushDetail(detailsArr, consume, 'Haid (Jeda < 15 Hari)');
                   }
                   cycleHaidAcc += consume;
@@ -150,7 +144,7 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
           }
       }
 
-      // Sisa waktu yang tidak masuk pola (Istihadhah murni)
+      // Sisa waktu di luar pola
       if (pLeft > 0.01) {
           pushDetail(detailsArr, pLeft, 'Istihadhah');
           globalTimeAcc += pLeft;
@@ -165,7 +159,7 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
   });
 
   meta.caseStatus = phase === 'CYCLE' 
-    ? `Siklus Mu'tadah (AH ${adatHaid} / AS ${adatSuci})` 
+    ? `Siklus Haid (AH ${adatHaid} / AS ${adatSuci})` 
     : phase === 'POST_NIFAS_SUCI'
     ? `Melunasi Adat Suci (${formatDuration(postNifasSuciAcc)} / ${formatDuration(baseSuci)})`
     : 'Perhitungan Nifas';
