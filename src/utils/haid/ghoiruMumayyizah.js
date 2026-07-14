@@ -1,7 +1,4 @@
 // src/utils/haid/ghoiruMumayyizah.js
-// Menangani kasus Mustahadhah GHOIRU MUMAYYIZAH (gagal Tamyiz).
-// PERBAIKAN: Menghapus blok "Fasad kaku" di awal. Darah < 24 jam di awal 
-// tetap dihukumi Haid jika memenuhi syarat Qoul Sahbi.
 import { MAX_HAID_JAM, MIN_SUCI_JAM } from './constants';
 import { pushDetail, buildPeriodLabel, scanContinuousKD, scanUntilNextKD } from './helpers';
 import { isSuciTakmil, getTakmilSuciTarget, applyTakmilAdatBaru } from './takmil';
@@ -23,10 +20,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
   spanPeriods.forEach((p, idx) => {
     let pLeft = p.hours;
     const detailsArr = [];
-
-    // [DIHAPUS] Blok Fasad kaku yang salah:
-    // if (idx === 0 && p.type === 'KD' && p.hours < 24) { ... }
-    // Kita biarkan state-machine memprosesnya secara natural.
 
     while (pLeft > 0.01) {
       if (loopState === 'SUCI') {
@@ -59,6 +52,13 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
           pushDetail(detailsArr, consume, label);
           suciAcc += consume;
           pLeft -= consume;
+          
+          // KAIDAH BARU: Jika sedang memproses Jeda Bersih (B) dan akumulasi suci 
+          // sudah mencapai batas Takmil (15 hari), maka belenggu kewajiban 
+          // mencapai Adat Suci otomatis digugurkan. KD selanjutnya pasti Haid!
+          if (p.type === 'B' && suciAcc >= MIN_SUCI_JAM) {
+              isTaqothuActive = false;
+          }
         }
 
         if (suciAcc >= targetSuci && pLeft > 0 && p.type === 'KD') {
@@ -74,11 +74,9 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
           const { totalContinuousKD, isFirstRealKD, nextB, hasNextKD } = scanContinuousKD(spanPeriods, idx, pLeft);
 
           if (!isNormalQoul1) {
-            // === ATURAN A: AKHIR SIKLUS PANTAS JADI HAID SEMUA ===
             if (!hasNextKD && totalContinuousKD <= MAX_HAID_JAM) {
               targetHaid = totalContinuousKD;
             }
-            // === ATURAN B: PELACAK KD + B (TAQOTHU vs TAKMIL) ===
             else if (isFirstRealKD && effectiveStatus === 'mutadah' && totalContinuousKD > cycleAdatHaid && totalContinuousKD <= MAX_HAID_JAM) {
               if (isTaqothuBukanTakmil(totalContinuousKD, nextB)) {
                 targetHaid = applyTaqothuPertahankanAdat(cycleAdatHaid).targetHaid;
@@ -88,7 +86,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
                 cycleAdatSuci = hasil.cycleAdatSuci;
               }
             }
-            // === DEFAULT KEMBALI KE ADAT ===
             else {
               targetHaid = cycleAdatHaid;
             }
@@ -115,7 +112,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
             targetSuci = getTaqothuSuciTarget(cycleAdatSuci);
           }
         } else {
-          // === LOGIKA QOUL SAHBI (Jeda di tengah Haid) ===
           const { hasKDAfter, timeToNextKD } = scanUntilNextKD(spanPeriods, idx);
           const nextKDStart = haidAcc + pLeft + timeToNextKD;
 
