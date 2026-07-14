@@ -1,3 +1,4 @@
+```jsx
 // src/App.jsx
 import React, { useState } from 'react';
 import {
@@ -358,16 +359,7 @@ const App = () => {
           </div>
 
           <div className="lg:col-span-8 space-y-4 md:space-y-6">
-            <div className="bg-white rounded-xl p-3 md:p-5 border border-slate-200 flex flex-col justify-end relative">
-              {(logs.length > 0 || trailingBHours > 0 || analysisResult) && (
-                <button
-                  onClick={() => { setLogs([]); setAnalysisResult(null); setTrailingBHours(0); setInputWiladah(''); }}
-                  className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                  title="Reset data dan jawaban"
-                >
-                  <RotateCcw size={15}/>
-                </button>
-              )}
+            <div className="bg-white rounded-xl p-3 md:p-5 border border-slate-200 flex flex-col justify-end">
               {(logs.length > 0 || trailingBHours > 0) && (
                 <div className="overflow-auto rounded-lg max-h-72 mb-4 bg-white border border-slate-200 custom-scrollbar">
                   <table className="w-full text-xs text-center border-collapse">
@@ -438,7 +430,19 @@ const App = () => {
                 <div className="flex-1 flex items-center justify-center text-slate-500 italic text-sm py-10 md:py-20 border border-dashed border-slate-300 rounded-lg mb-4 bg-slate-50">Data pendarahan akan muncul di sini...</div>
               )}
               
-              <button onClick={runAnalysisEngine} className="w-full text-white font-bold py-4 rounded flex justify-center items-center gap-2 transition-colors bg-emerald-600 hover:bg-emerald-700 text-sm md:text-base tracking-wide">HITUNG SEKARANG <ChevronRight size={18}/></button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                {(logs.length > 0 || trailingBHours > 0 || analysisResult) && (
+                  <button
+                    onClick={() => { setLogs([]); setAnalysisResult(null); setTrailingBHours(0); setInputWiladah(''); }}
+                    className="flex items-center justify-center gap-2 px-5 py-4 rounded text-sm md:text-base font-bold transition-colors bg-red-50 text-red-600 hover:bg-red-100 border border-red-100"
+                  >
+                    <RotateCcw size={18}/> Reset Data
+                  </button>
+                )}
+                <button onClick={runAnalysisEngine} className="flex-1 w-full text-white font-bold py-4 rounded flex justify-center items-center gap-2 transition-colors bg-emerald-600 hover:bg-emerald-700 text-sm md:text-base tracking-wide">
+                  HITUNG SEKARANG <ChevronRight size={18}/>
+                </button>
+              </div>
             </div>
 
             {analysisResult && !analysisResult.error && (
@@ -545,3 +549,5 @@ const App = () => {
   );
 };
 export default App;
+
+```
