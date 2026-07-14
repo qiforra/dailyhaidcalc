@@ -1,4 +1,3 @@
-```jsx
 // src/App.jsx
 import React, { useState } from 'react';
 import {
@@ -549,5 +548,3 @@ const App = () => {
   );
 };
 export default App;
-
-```
