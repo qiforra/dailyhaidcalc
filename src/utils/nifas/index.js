@@ -14,7 +14,8 @@ export const analyzeNifasPeriods = (periods, userConfig) => {
     const { normalNifasHours, isMustahadhah } = checkMustahadhah(periods);
 
     if (!isMustahadhah) {
-        return runStateMachine(periods, userConfig, normalNifasHours, "Nifas Normal (Berhenti Sebelum 60 Hari)", false);
+        // PERBAIKAN: Teks caseStatus disesuaikan
+        return runStateMachine(periods, userConfig, normalNifasHours, "Nifas Normal (Berhenti Tepat/Sebelum 60 Hari)", false);
     }
 
     const tamyizResult = checkTamyiz(periods);
