@@ -9,8 +9,6 @@ import {
 import { parseHaidText } from './utils/textParser';
 import { msToHours, formatDuration, getColorLabel, getBadgeStyle } from './utils/formatters';
 import { analyzeHaidPeriods } from './utils/haid/engine';
-
-// PERUBAHAN DI SINI: Mengubah import path ke folder nifas yang baru terpecah
 import { analyzeNifasPeriods } from './utils/nifas';
 
 // HELPER: Mengamankan zona waktu lokal
@@ -37,6 +35,7 @@ const App = () => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [activeTab, setActiveTab] = useState('QOUL_2');
   const [copied, setCopied] = useState(false);
+  const [copiedSoal, setCopiedSoal] = useState(false); // STATE BARU: Untuk Salin Soal
   const [showGuide, setShowGuide] = useState(false);
   
   const [trailingBHours, setTrailingBHours] = useState(0);
@@ -79,7 +78,6 @@ const App = () => {
 
     let currentTime = new Date();
     
-    // PERBAIKAN: Jika ada tanggal spesifik (misal: 20 april), set currentTime dari situ!
     if (periods.length > 0 && periods[0].parsedStartDate) {
       currentTime = new Date(periods[0].parsedStartDate);
     }
@@ -96,7 +94,6 @@ const App = () => {
 
     const newLogs = [];
     periods.forEach((p) => {
-      // Jika rentang tanggal, sinkronkan ulang jamnya ke tanggal persis yang dibaca Parser
       if (p.parsedStartDate) {
         currentTime = new Date(p.parsedStartDate);
       }
@@ -210,9 +207,47 @@ const App = () => {
   };
 
   let activeBreakdown = [];
-  if (analysisResult) {
+  if (analysisResult && !analysisResult.error) {
     activeBreakdown = activeTab === 'QOUL_1' ? analysisResult.qoul1 : analysisResult.qoul2;
   }
+
+  // FUNGSI BARU: Salin Soal
+  const handleCopySoal = () => {
+    if (!analysisResult && logs.length === 0) return;
+    let textToCopy = `Kasus ${appMode === 'NIFAS' ? 'Nifas' : 'Haid'} (${userStatus === 'mutadah' ? (lupaAdat ? 'Mutahayyirah' : `Mu'tadah`) : "Mubtadi'ah"})\n\n`;
+    
+    if (userStatus === 'mutadah' && !lupaAdat) {
+      if (appMode === 'NIFAS') textToCopy += `AN: ${adatNifas} Hari\n`;
+      textToCopy += `AH: ${adatHaid} Hari\nAS: ${adatSuci} Hari\n\n`;
+    }
+
+    if (appMode === 'NIFAS' && inputWiladah && logs.length > 0) {
+      const gap = msToHours(new Date(logs[0].start) - new Date(inputWiladah));
+      if (gap > 0) textToCopy += `B (Jeda Melahirkan): ${formatDuration(gap)}\n`;
+    }
+
+    logs.forEach((log, index) => {
+      textToCopy += `KD: ${formatDuration(log.durationHours)} ${log.color ? `(Warna: ${getColorLabel(log.color).split(' ')[0]})` : ''}\n`;
+      if (index < logs.length - 1) {
+        const gap = msToHours(new Date(logs[index+1].start) - new Date(log.end));
+        if (gap > 0) textToCopy += `B: ${formatDuration(gap)}\n`;
+      }
+    });
+
+    if (trailingBHours > 0) {
+      textToCopy += `B (Masih Berlangsung): ${formatDuration(trailingBHours)}\n`;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = textToCopy.trim();
+    document.body.appendChild(textArea);
+    textArea.focus(); textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopiedSoal(true); setTimeout(() => setCopiedSoal(false), 2000);
+    } catch (err) {}
+    document.body.removeChild(textArea);
+  };
 
   const handleCopyResult = () => {
     if (!analysisResult) return;
@@ -448,12 +483,21 @@ const App = () => {
 
             {analysisResult && !analysisResult.error && (
               <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
-                <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="p-4 md:p-5 border-b border-slate-200 bg-slate-50 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <h3 className="text-base md:text-lg font-bold text-slate-800">Hasil Analisis Kasus</h3>
-                  <button onClick={handleCopyResult} className="bg-slate-900 text-white px-5 py-2.5 rounded text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
-                    {copied ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
-                    {copied ? 'Tersalin!' : 'Salin Jawaban'}
-                  </button>
+                  
+                  {/* MODIFIKASI: Tombol Salin Soal berdampingan dengan Salin Jawaban */}
+                  <div className="flex flex-wrap md:flex-nowrap gap-2">
+                    <button onClick={handleCopySoal} className="flex-1 bg-white text-indigo-700 border border-indigo-200 px-4 py-2.5 rounded text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors">
+                      {copiedSoal ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                      {copiedSoal ? 'Soal Tersalin!' : 'Salin Soal'}
+                    </button>
+                    <button onClick={handleCopyResult} className="flex-1 bg-slate-900 text-white px-4 py-2.5 rounded text-xs font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
+                      {copied ? <CheckCircle2 size={14}/> : <Copy size={14}/>}
+                      {copied ? 'Tersalin!' : 'Salin Jawaban'}
+                    </button>
+                  </div>
+
                 </div>
                 {analysisResult.hasKhilaf ? (
                   <div className="flex border-b border-slate-200 bg-white">
