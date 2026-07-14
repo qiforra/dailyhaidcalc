@@ -316,18 +316,9 @@ const App = () => {
                     <div className="bg-red-100 p-2 rounded text-red-600"><Droplets size={18}/></div>
                     <h2 className="text-sm md:text-base font-bold text-slate-800">Input Catatan</h2>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setLogs([]); setAnalysisResult(null); setTrailingBHours(0); setInputWiladah(''); }}
-                      className="flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-red-600 hover:text-red-800 transition-colors bg-red-50 px-2 py-1.5 rounded border border-red-100"
-                      title="Reset data dan jawaban"
-                    >
-                      <RotateCcw size={14}/> RESET
-                    </button>
-                    <button onClick={() => setShowGuide(true)} className="flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1.5 rounded border border-indigo-100">
-                      <HelpCircle size={14}/> PANDUAN
-                    </button>
-                  </div>
+                  <button onClick={() => setShowGuide(true)} className="flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1.5 rounded border border-indigo-100">
+                    <HelpCircle size={14}/> PANDUAN
+                  </button>
                 </div>
 
                 <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -367,7 +358,16 @@ const App = () => {
           </div>
 
           <div className="lg:col-span-8 space-y-4 md:space-y-6">
-            <div className="bg-white rounded-xl p-3 md:p-5 border border-slate-200 flex flex-col justify-end">
+            <div className="bg-white rounded-xl p-3 md:p-5 border border-slate-200 flex flex-col justify-end relative">
+              {(logs.length > 0 || trailingBHours > 0 || analysisResult) && (
+                <button
+                  onClick={() => { setLogs([]); setAnalysisResult(null); setTrailingBHours(0); setInputWiladah(''); }}
+                  className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                  title="Reset data dan jawaban"
+                >
+                  <RotateCcw size={15}/>
+                </button>
+              )}
               {(logs.length > 0 || trailingBHours > 0) && (
                 <div className="overflow-auto rounded-lg max-h-72 mb-4 bg-white border border-slate-200 custom-scrollbar">
                   <table className="w-full text-xs text-center border-collapse">
