@@ -6,6 +6,9 @@ import { evaluateTamyiz } from './tamyiz';
 import { formatTamyizResult } from './tamyizFormatter';
 import { resolveGhoiruMumayyizah } from './ghoiruMumayyizah';
 
+// TAMBAHKAN IMPORT INI
+import { processMutadahMumayyizahSpecialCase } from './mutadahMumayyizah'; 
+
 export const analyzeHaidPeriods = (periods, qoulMode, userConfig) => {
   const { userStatus, lupaAdat, adatHaid, adatSuci } = userConfig;
   const breakdown = [];
@@ -54,6 +57,20 @@ export const analyzeHaidPeriods = (periods, qoulMode, userConfig) => {
     }
     const isTakmilDirect = (kd1Hours + b1Hours) >= MIN_SUCI_JAM;
 
+    // --- PENCEGAT (INTERCEPTOR): KASUS KHUSUS MU'TADAH MUMAYYIZAH ---
+    if (!isTakmilDirect && effectiveStatus === 'mutadah') {
+      const specialCase = processMutadahMumayyizahSpecialCase(span.periods, userConfig);
+      
+      if (specialCase) {
+        breakdown.push(...specialCase.breakdown);
+        cycleAdatHaid = specialCase.meta.cycleAdatHaid; 
+        meta.caseStatus = specialCase.meta.caseStatus;
+        meta.isTamyizValid = true;
+        return; // Hentikan eksekusi span ini, lanjut ke span berikutnya
+      }
+    }
+    // -----------------------------------------------------------------
+
     let tamyizValid = false, tamyizSpansResult = [];
     if (isTakmilDirect) {
       meta.isTamyizValid = false;
@@ -78,7 +95,7 @@ export const analyzeHaidPeriods = (periods, qoulMode, userConfig) => {
       cycleAdatHaid = newCycleAdatHaid;
       meta.caseStatus = userStatus === 'mutadah' ? "Mu'tadah Mumayyizah" : "Mubtada'ah Mumayyizah";
       
-      return; // PENTING: Stop di sini, jangan lanjut ke Ghoiru Mumayyizah!
+      return; 
     }
 
     // --- CABANG B: TAMYIZ GAGAL (GHOIRU MUMAYYIZAH) ---
