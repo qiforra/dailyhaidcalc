@@ -57,8 +57,10 @@ export const analyzeHaidPeriods = (periods, qoulMode, userConfig) => {
     }
     const isTakmilDirect = (kd1Hours + b1Hours) >= MIN_SUCI_JAM;
 
-    // --- PENCEGAT (INTERCEPTOR): KASUS KHUSUS MU'TADAH MUMAYYIZAH ---
-    if (!isTakmilDirect && effectiveStatus === 'mutadah') {
+   // --- PENCEGAT (INTERCEPTOR): KASUS KHUSUS MU'TADAH MUMAYYIZAH ---
+    // PERBAIKAN: Hapus "!isTakmilDirect" agar KD yang panjangnya melebihi 15 hari 
+    // tetap bisa masuk ke pengecekan spesial ini.
+    if (effectiveStatus === 'mutadah') {
       const specialCase = processMutadahMumayyizahSpecialCase(span.periods, userConfig);
       
       if (specialCase) {
