@@ -111,6 +111,21 @@ export const runStateMachine = (periods, userConfig, activeTargetNifas, caseStat
                 }
             }
             else if (loopState === 'HAID') {
+                
+                // 🚩 PERBAIKAN: Lookahead untuk merestui sisa darah Nifas sebagai Haid penuh
+                if (haidAcc === 0 && p.type === 'KD') {
+                    let remainingTime = pLeft;
+                    for (let i = idx + 1; i < periods.length; i++) {
+                        if (periods[i].type === 'B' && periods[i].hours >= 15 * 24) break;
+                        remainingTime += periods[i].hours;
+                    }
+                    if (remainingTime <= 15 * 24) {
+                        targetHaid = 15 * 24;
+                    } else {
+                        targetHaid = cycleAdatHaid;
+                    }
+                }
+
                 consume = Math.min(pLeft, targetHaid - haidAcc);
                 if (p.type === 'KD') {
                     if (consume > 0) {
