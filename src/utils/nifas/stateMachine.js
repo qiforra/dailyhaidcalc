@@ -33,6 +33,7 @@ export const runStateMachine = (periods, userConfig, activeTargetNifas, caseStat
         let pLeft = p.hours;
         let detailsArr = [];
 
+        // Jeda Wiladah >= 15 hari membatalkan Nifas
         if (idx === 0 && p.type === 'B') {
             if (p.hours >= 15 * 24) {
                 pushDetail(detailsArr, p.hours, "Suci (Jeda Wiladah / Nifas 'Adadan)");
@@ -48,15 +49,33 @@ export const runStateMachine = (periods, userConfig, activeTargetNifas, caseStat
             let consume = 0;
             
             if (loopState === 'NIFAS') {
-                consume = Math.min(pLeft, activeTargetNifas - nifasAcc);
+                // 🚩 PERBAIKAN KRUSIAL: Adat dihitung "hukman sejak ru'yatiddam"
+                // Jeda Suci (B) memakan batas mutlak 60 hari, tapi TIDAK memakan kuota Adat Nifas
+                let limit;
+                if (p.type === 'KD') {
+                    limit = Math.min(activeTargetNifas - nifasAcc, (60 * 24) - globalTimeAcc);
+                } else {
+                    limit = (60 * 24) - globalTimeAcc;
+                }
+
+                consume = Math.min(pLeft, limit);
+
                 if (consume > 0) {
                     let label = p.type === 'KD' ? 'Nifas' : "Suci (Jeda Wiladah / Nifas 'Adadan)";
                     pushDetail(detailsArr, consume, label);
-                    nifasAcc += consume; 
+                    
+                    if (p.type === 'KD') {
+                        nifasAcc += consume; // Hanya darah yang memakai kuota Adat
+                    }
+                    
                     pLeft -= consume; 
                     globalTimeAcc += consume;
                 }
-                if (nifasAcc >= activeTargetNifas) {
+                
+                // Mesin pindah ke fase Suci jika:
+                // 1. Darah (KD) sudah menghabiskan kuota Adat (misal 55 hari), ATAU
+                // 2. Total waktu sejak wiladah (Jeda + Darah) menabrak batas mutlak 60 hari
+                if ((p.type === 'KD' && nifasAcc >= activeTargetNifas) || globalTimeAcc >= 60 * 24 - 0.01) {
                     loopState = 'SUCI'; 
                     suciAcc = 0; 
                     targetSuci = cycleAdatSuci < 15 * 24 ? 15 * 24 : cycleAdatSuci;
@@ -112,7 +131,7 @@ export const runStateMachine = (periods, userConfig, activeTargetNifas, caseStat
             }
             else if (loopState === 'HAID') {
                 
-                // 🚩 PERBAIKAN: Lookahead untuk merestui sisa darah Nifas sebagai Haid penuh
+                // Lookahead agar sisa darah <= 15 hari mutlak jadi Haid
                 if (haidAcc === 0 && p.type === 'KD') {
                     let remainingTime = pLeft;
                     for (let i = idx + 1; i < periods.length; i++) {
