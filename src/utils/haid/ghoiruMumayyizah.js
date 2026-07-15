@@ -4,6 +4,15 @@ import { pushDetail, buildPeriodLabel, scanContinuousKD, scanUntilNextKD } from 
 import { isSuciTakmil, getTakmilSuciTarget, applyTakmilAdatBaru } from './takmil';
 import { getTaqothuSuciTarget, applyTaqothuPertahankanAdat, isTaqothuBukanTakmil } from './taqothu';
 
+// TAMBAHAN HELPER: Menghitung total sisa waktu dalam span (rentang) ini
+const getRemainingSpanTime = (spanPeriods, currentIdx, pLeft) => {
+  let total = pLeft;
+  for (let i = currentIdx + 1; i < spanPeriods.length; i++) {
+    total += spanPeriods[i].hours;
+  }
+  return total;
+};
+
 export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
   let { cycleAdatHaid, cycleAdatSuci, baseHaid, effectiveStatus, isNormalQoul1 } = ctx;
   const breakdownItems = [];
@@ -43,7 +52,7 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
           windowTime = 0;
           haidAcc = 0;
           cycleAdatSuci = suciAcc;
-          isTaqothuActive = false; // Reset Taqothu' jika suci sudah mencapai target
+          isTaqothuActive = false; 
           continue; 
         }
 
@@ -87,38 +96,40 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
         
         // --- EVALUASI AWAL KD (TARGET & TAKMIL/TAQOTHU') ---
         if (p.type === 'KD' && haidAcc === 0 && windowTime === 0) {
-          const { totalContinuousKD, isFirstRealKD, nextB, hasNextKD } = scanContinuousKD(spanPeriods, idx, pLeft);
           
-          if (!isNormalQoul1) {
-            if (!hasNextKD && totalContinuousKD <= MAX_HAID_JAM) {
-              targetHaid = totalContinuousKD;
-            }
-            else if (isFirstRealKD && effectiveStatus === 'mutadah' && totalContinuousKD > cycleAdatHaid && totalContinuousKD <= MAX_HAID_JAM) {
-              
-              // 🚩 PERBAIKAN KRUNSIAL 1: TAKMIL HANYA BISA DI AWAL (TIDAK BISA SETELAH TAQOTHU')
-              // Jika isTaqothuActive = true (berarti jeda bersih sebelumnya < 15 hari), 
-              // maka HARAM membentuk Adat Baru (Takmil). Wajib pertahankan Adat Lama.
-              if (isTaqothuActive) {
-                targetHaid = applyTaqothuPertahankanAdat(cycleAdatHaid).targetHaid;
-              } else {
-                // Jika bukan Taqothu', baru cek apakah memenuhi syarat Takmil (KD + B >= 15)
-                if (isTaqothuBukanTakmil(totalContinuousKD, nextB)) {
+          // 🚩 PERBAIKAN: Jika sisa darah + jeda sampai habis <= 15 hari, 
+          // pantas jadi Haid semua! Abaikan adat.
+          const remainingTime = getRemainingSpanTime(spanPeriods, idx, pLeft);
+          
+          if (remainingTime <= MAX_HAID_JAM) {
+            targetHaid = MAX_HAID_JAM;
+          } else {
+            const { totalContinuousKD, isFirstRealKD, nextB, hasNextKD } = scanContinuousKD(spanPeriods, idx, pLeft);
+            
+            if (!isNormalQoul1) {
+              if (!hasNextKD && totalContinuousKD <= MAX_HAID_JAM) {
+                targetHaid = totalContinuousKD;
+              }
+              else if (isFirstRealKD && effectiveStatus === 'mutadah' && totalContinuousKD > cycleAdatHaid && totalContinuousKD <= MAX_HAID_JAM) {
+                if (isTaqothuActive) {
                   targetHaid = applyTaqothuPertahankanAdat(cycleAdatHaid).targetHaid;
                 } else {
-                  const hasil = applyTakmilAdatBaru(totalContinuousKD);
-                  targetHaid = hasil.targetHaid; 
-                  cycleAdatSuci = hasil.cycleAdatSuci;
+                  if (isTaqothuBukanTakmil(totalContinuousKD, nextB)) {
+                    targetHaid = applyTaqothuPertahankanAdat(cycleAdatHaid).targetHaid;
+                  } else {
+                    const hasil = applyTakmilAdatBaru(totalContinuousKD);
+                    targetHaid = hasil.targetHaid; 
+                    cycleAdatSuci = hasil.cycleAdatSuci;
+                  }
                 }
               }
+              else {
+                targetHaid = cycleAdatHaid;
+              }
+            } else {
+              targetHaid = baseHaid;
             }
-            else {
-              targetHaid = cycleAdatHaid;
-            }
-          } else {
-            targetHaid = baseHaid;
           }
-
-          const currentTarget = targetHaid;
 
           // Logika Dam Muthatorrif (Haid Mundur)
           if (p.hours < MIN_HAID_JAM) {
@@ -129,7 +140,7 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
               const nextKdHours = spanPeriods[nextKdIdx].hours;
               
               const kd1PlusB = p.hours + timeToNextKD;
-              const canNyaplok = kd1PlusB < currentTarget; 
+              const canNyaplok = kd1PlusB < targetHaid; 
               const isValidNextKD = nextKdHours >= MIN_HAID_JAM && nextKdHours <= MAX_HAID_JAM;
 
               if (!canNyaplok && isValidNextKD) {
@@ -178,7 +189,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
         else if (p.type === 'B') {
           const { hasKDAfter } = scanUntilNextKD(spanPeriods, idx);
           
-          // Cari durasi pasti dari KD selanjutnya
           let nextKDHours = 0;
           if (hasKDAfter) {
             let nextIdx = idx + 1;
@@ -186,10 +196,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
             if (nextIdx < spanPeriods.length) nextKDHours = spanPeriods[nextIdx].hours;
           }
 
-          // 🚩 PERBAIKAN KRUSIAL 2: SYARAT SAH QOUL SAHBI
-          // Sahbi HANYA sah jika B benar-benar "diapit" oleh 2 darah yang membentuk 
-          // satu kesatuan Haid (Total: HaidAcc + B + KD Berikutnya <= 15 hari).
-          // Jika melebihi 15 hari, atau target haid sudah tercapai sebelum B, maka B = SUCI.
           const totalPotential = haidAcc + pLeft + nextKDHours;
           const isSandwichedValid = hasKDAfter && totalPotential <= MAX_HAID_JAM && haidAcc < currentTarget;
 
@@ -210,7 +216,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
               targetSuci = getTaqothuSuciTarget(cycleAdatSuci);
             }
           } else {
-            // Tidak memenuhi syarat Sahbi. Akhiri state HAID, sisa B akan diproses sebagai SUCI.
             lastHaidDuration = haidAcc;
             loopState = 'SUCI';
             suciAcc = 0;
