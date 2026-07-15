@@ -12,6 +12,7 @@ export const evaluateTamyiz = (spanPeriods) => {
     return { isTamyizValid: false, fallbackReason: 'Ghoiru Mumayyizah: Tidak ada pembedaan sifat darah.', tamyizSpans: [] };
   }
 
+  // Cari warna darah paling kuat secara mutlak (angka paling kecil)
   const allKdColors = spanPeriods.filter((p) => p.type === 'KD').map((p) => p.color || DEFAULT_WEAK_COLOR);
   const absoluteStrongestColor = Math.min(...allKdColors);
   const tamyizSpans = [];
@@ -20,43 +21,47 @@ export const evaluateTamyiz = (spanPeriods) => {
   let currentWeakAcc = 0;
   let isSearchingHaid = true;
   let foundStrongest = false;
-  let hasAcceptedWeak = false;
-  let lastColor = absoluteStrongestColor;
-  let lastWeakColor = DEFAULT_WEAK_COLOR;
 
   spanPeriods.forEach((p, idx) => {
     if (isSearchingHaid) {
       if (p.type === 'KD') {
         const pColor = p.color || DEFAULT_WEAK_COLOR;
+        
         if (!foundStrongest) {
           if (pColor === absoluteStrongestColor) {
             foundStrongest = true;
-            currentHaidAcc = p.hours;
-            tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
+            if (p.hours > MAX_HAID_JAM) {
+              tamyizSpans.push({ id: idx, type: 'HAID', hours: MAX_HAID_JAM, color: pColor });
+              tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours - MAX_HAID_JAM, color: pColor });
+              currentHaidAcc = MAX_HAID_JAM;
+              isSearchingHaid = false;
+              currentWeakAcc = p.hours - MAX_HAID_JAM;
+            } else {
+              currentHaidAcc = p.hours;
+              tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
+            }
           } else {
             tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours, color: pColor });
           }
         } else {
-          if (pColor === lastColor) {
-            currentHaidAcc += p.hours;
-            tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
-          } 
-          // 🚩 PERBAIKAN DI SINI: Ubah <= menjadi <
-          // Darah lemah TIDAK BOLEH ditarik jadi Haid jika akan menggenapi 15 hari.
-          // Biarkan ia jadi Isti agar bisa membentuk "pemisah darah lemah 15 hari".
-          else if (pColor > lastColor) {
-            if (!hasAcceptedWeak && (currentHaidAcc + p.hours < MAX_HAID_JAM)) {
+          // Hanya warna yang SETARA dengan yang terkuat yang bisa terus menyambung sebagai Haid
+          if (pColor === absoluteStrongestColor) {
+            if (currentHaidAcc + p.hours <= MAX_HAID_JAM) {
               currentHaidAcc += p.hours;
-              hasAcceptedWeak = true;
-              lastColor = pColor;
               tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
-              isSearchingHaid = false;
             } else {
+              const allowed = MAX_HAID_JAM - currentHaidAcc;
+              if (allowed > 0) tamyizSpans.push({ id: idx, type: 'HAID', hours: allowed, color: pColor });
+              const excess = p.hours - allowed;
               isSearchingHaid = false;
-              currentWeakAcc = p.hours;
-              lastWeakColor = pColor;
-              tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours, color: pColor });
+              currentWeakAcc = excess;
+              tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: excess, color: pColor });
             }
+          } else {
+            // Jika warna darah LEBIH LEMAH dari yang terkuat, hentikan pencarian Haid dan mulai susun darah lemah (Istihadhoh)
+            isSearchingHaid = false;
+            currentWeakAcc = p.hours;
+            tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours, color: pColor });
           }
         }
       } else if (p.type === 'B') {
@@ -70,49 +75,49 @@ export const evaluateTamyiz = (spanPeriods) => {
           nextKDColor = spanPeriods[lookAheadIdx].color || DEFAULT_WEAK_COLOR;
         }
 
-        const isSandwiched = (currentHaidAcc > 0) && (nextKDHours > 0) && (nextKDColor <= lastColor) && (currentHaidAcc + p.hours + nextKDHours <= MAX_HAID_JAM);
+        const isSandwiched = (currentHaidAcc > 0) && (nextKDHours > 0) && (nextKDColor === absoluteStrongestColor) && (currentHaidAcc + p.hours + nextKDHours <= MAX_HAID_JAM);
         
-        if (isSandwiched && !hasAcceptedWeak) {
+        if (isSandwiched) {
           currentHaidAcc += p.hours;
           tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours });
         } else {
-          if (currentHaidAcc >= MIN_HAID_JAM && currentHaidAcc <= MAX_HAID_JAM) {
-            isSearchingHaid = false;
-            currentWeakAcc = p.hours;
-            tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours });
-          } else {
-            currentHaidAcc += p.hours;
-            tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours });
-          }
+          isSearchingHaid = false;
+          currentWeakAcc = p.hours;
+          tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours });
         }
       }
     } else {
-      // STATE: SUDAH MENEMUKAN DARAH LEMAH (MENCARI PEMISAH 15 HARI)
+      // STATE: MENCARI PEMISAH 15 HARI
       if (p.type === 'B') {
         currentWeakAcc += p.hours;
         tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours });
       } else if (p.type === 'KD') {
         const pColor = p.color || DEFAULT_WEAK_COLOR;
         
-        // 🚩 KUNCI UTAMA: Jika akumulasi darah lemah sudah >= 15 hari (pemisah hukum terpenuhi)
-        // DAN darah baru lebih kuat/sama, maka ini adalah HAID BARU!
+        // Cek apakah akumulasi darah lemah/jeda bersih sudah genap 15 hari
         if (currentWeakAcc >= MIN_SUCI_JAM) {
-          if (pColor <= lastWeakColor) {
+          if (pColor === absoluteStrongestColor) {
+            // Darah kuat datang LAGI setelah dipisah 15 hari -> HAID BARU DIMULAI
             isSearchingHaid = true;
             foundStrongest = true;
-            hasAcceptedWeak = false;
-            currentHaidAcc = p.hours;
-            lastColor = pColor;
             currentWeakAcc = 0;
-            tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
+            if (p.hours > MAX_HAID_JAM) {
+              tamyizSpans.push({ id: idx, type: 'HAID', hours: MAX_HAID_JAM, color: pColor });
+              tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours - MAX_HAID_JAM, color: pColor });
+              currentHaidAcc = MAX_HAID_JAM;
+              isSearchingHaid = false;
+              currentWeakAcc = p.hours - MAX_HAID_JAM;
+            } else {
+              currentHaidAcc = p.hours;
+              tamyizSpans.push({ id: idx, type: 'HAID', hours: p.hours, color: pColor });
+            }
           } else {
             currentWeakAcc += p.hours;
-            lastWeakColor = pColor;
             tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours, color: pColor });
           }
         } else {
+          // Jika darah kuat datang sebelum 15 hari pemisah genap, ia HANCUR statusnya jadi Istihadhoh
           currentWeakAcc += p.hours;
-          lastWeakColor = pColor;
           tamyizSpans.push({ id: idx, type: 'ISTIHADHOH', hours: p.hours, color: pColor });
         }
       }
