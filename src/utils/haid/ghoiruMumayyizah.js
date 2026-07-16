@@ -4,7 +4,6 @@ import { pushDetail, buildPeriodLabel, scanContinuousKD, scanUntilNextKD } from 
 import { isSuciTakmil, getTakmilSuciTarget, applyTakmilAdatBaru } from './takmil';
 import { getTaqothuSuciTarget, applyTaqothuPertahankanAdat, isTaqothuBukanTakmil } from './taqothu';
 
-// TAMBAHAN HELPER: Menghitung total sisa waktu dalam span (rentang) ini
 const getRemainingSpanTime = (spanPeriods, currentIdx, pLeft) => {
   let total = pLeft;
   for (let i = currentIdx + 1; i < spanPeriods.length; i++) {
@@ -94,11 +93,8 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
       // ==========================================
       if (loopState === 'HAID') {
         
-        // --- EVALUASI AWAL KD (TARGET & TAKMIL/TAQOTHU') ---
         if (p.type === 'KD' && haidAcc === 0 && windowTime === 0) {
           
-          // 🚩 PERBAIKAN: Jika sisa darah + jeda sampai habis <= 15 hari, 
-          // pantas jadi Haid semua! Abaikan adat.
           const remainingTime = getRemainingSpanTime(spanPeriods, idx, pLeft);
           
           if (remainingTime <= MAX_HAID_JAM) {
@@ -131,7 +127,6 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
             }
           }
 
-          // Logika Dam Muthatorrif (Haid Mundur)
           if (p.hours < MIN_HAID_JAM) {
             const { hasKDAfter, timeToNextKD } = scanUntilNextKD(spanPeriods, idx);
             if (hasKDAfter) {
@@ -189,15 +184,10 @@ export const resolveGhoiruMumayyizah = (spanPeriods, ctx) => {
         else if (p.type === 'B') {
           const { hasKDAfter } = scanUntilNextKD(spanPeriods, idx);
           
-          let nextKDHours = 0;
-          if (hasKDAfter) {
-            let nextIdx = idx + 1;
-            while(nextIdx < spanPeriods.length && spanPeriods[nextIdx].type !== 'KD') nextIdx++;
-            if (nextIdx < spanPeriods.length) nextKDHours = spanPeriods[nextIdx].hours;
-          }
-
-          const totalPotential = haidAcc + pLeft + nextKDHours;
-          const isSandwichedValid = hasKDAfter && totalPotential <= MAX_HAID_JAM && haidAcc < currentTarget;
+          // 🚩 PERBAIKAN: Di Ghoiru Mumayyizah, jika Adat belum terpenuhi (haidAcc < currentTarget),
+          // dan masih ada darah (KD) setelahnya, maka Jeda (B) mutlak dicaplok jadi Haid (Qoul Sahbi).
+          // Tidak perlu ngecek total seluruh KD lagi, karena Target Adat-nya otomatis akan membatasi.
+          const isSandwichedValid = hasKDAfter && haidAcc < currentTarget;
 
           if (isSandwichedValid) {
             const needed = currentTarget - haidAcc;
